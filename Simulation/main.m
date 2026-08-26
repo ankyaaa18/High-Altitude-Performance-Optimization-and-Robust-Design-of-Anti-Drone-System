@@ -1,3 +1,4 @@
+run('gui.m');
 clear;
 clc;
 close all;
@@ -312,6 +313,11 @@ estimatedAzimuth = atan2d( ...
     Yestimated, ...
     Xestimated);
 
+%% Find first protected-zone intrusion
+
+intrusionIndex = find( ...
+    estimatedRange <= protectedRadius, 1); 
+
 %% ==========================================
 % TRUE / RADAR / KALMAN + PROTECTED ZONE
 % ==========================================
@@ -413,6 +419,23 @@ legend('Estimated Vx',...
 
 title('Estimated Drone Velocity');
 
+%% Mark intrusion point
+
+if ~isempty(intrusionIndex)
+
+    plot(Xestimated(intrusionIndex),...
+        Yestimated(intrusionIndex),...
+        'o',...
+        'MarkerSize',12,...
+        'LineWidth',3);
+
+    text(Xestimated(intrusionIndex),...
+        Yestimated(intrusionIndex),...
+        '  ALERT: Zone Entry',...
+        'FontSize',11,...
+        'FontWeight','bold');
+
+end
 %% ==============================
 %  RADAR + KALMAN TRACKING
 %  ==============================
@@ -439,13 +462,13 @@ for k = 1:length(time)
 
     %% Kalman estimate
 
-    estimatedRange = ...
-        sqrt(Xestimated(k)^2 + ...
-        Yestimated(k)^2);
+currentEstimatedRange = ...
+    sqrt(Xestimated(k)^2 + ...
+    Yestimated(k)^2);
 
-    estimatedAzimuth = ...
-        atan2(Yestimated(k),...
-        Xestimated(k));
+currentEstimatedAzimuth = ...
+    atan2(Yestimated(k),...
+    Xestimated(k));
 
 
     %% Plot radar measurement
@@ -460,9 +483,9 @@ for k = 1:length(time)
 
     %% Plot Kalman estimate
 
-    p2 = polarplot(ax,...
-        estimatedAzimuth,...
-        estimatedRange,...
+p2 = polarplot(ax,...
+    currentEstimatedAzimuth,...
+    currentEstimatedRange,...
         'x',...
         'MarkerSize',9,...
         'LineWidth',2);
@@ -506,13 +529,13 @@ for k = 1:length(time)
         deg2rad(AzMeasured(k));
 
 
-    estimatedRange = ...
-        sqrt(Xestimated(k)^2 + ...
-        Yestimated(k)^2);
+currentEstimatedRange = ...
+    sqrt(Xestimated(k)^2 + ...
+    Yestimated(k)^2);
 
-    estimatedAzimuth = ...
-        atan2(Yestimated(k),...
-        Xestimated(k));
+currentEstimatedAzimuth = ...
+    atan2(Yestimated(k),...
+    Xestimated(k));
 
 
     %% Current radar measurement
@@ -578,5 +601,340 @@ else
     fprintf('Time  : %.2f seconds\n',intrusionTime);
     fprintf('Range : %.2f meters\n',intrusionRange);
     fprintf('====================================\n');
+
+end
+
+
+%% ==========================================
+%  REAL-TIME RADAR STATUS DISPLAY
+%  ==========================================
+alertTriggered = false;
+figure;
+
+ax = polaraxes;
+
+hold(ax,'on');
+
+rlim(ax,[0 radarMaxRange]);
+
+title(ax,'RADAR - DRONE DETECTION SYSTEM');
+
+%% Protected zone on radar
+
+thetaCircle = linspace(0,2*pi,360);
+
+polarplot(ax,...
+    thetaCircle,...
+    protectedRadius*ones(size(thetaCircle)),...
+    '--',...
+    'LineWidth',2);
+
+%% ==========================================
+%  REAL-TIME RADAR + ALERT
+%  ==========================================
+
+for k = 1:length(time)
+
+    %% Current radar measurement
+
+    measuredRange = Rmeasured(k);
+
+    measuredAzimuth = ...
+        deg2rad(AzMeasured(k));
+
+
+    %% Current Kalman estimate
+
+    currentRange = estimatedRange(k);
+
+    currentAzimuth = ...
+        deg2rad(estimatedAzimuth(k));
+
+
+    %% Determine target status
+
+    if currentRange <= protectedRadius
+
+        status = "⚠ INTRUSION";
+
+    elseif currentRange <= approachRadius
+
+        status = "APPROACHING";
+
+    else
+
+        status = "NORMAL";
+
+    end
+
+    %% Intrusion alert
+
+    if currentRange <= protectedRadius
+
+        if ~alertTriggered
+
+            fprintf('\n');
+            fprintf('====================================\n');
+            fprintf('       DRONE INTRUSION ALERT\n');
+            fprintf('====================================\n');
+            fprintf('Target  : T001\n');
+            fprintf('Range   : %.1f m\n', currentRange);
+            fprintf('Azimuth : %.1f degrees\n', estimatedAzimuth(k));
+            fprintf('====================================\n');
+
+            alertTriggered = true;
+
+        end
+
+    end
+    %% Plot radar measurement
+
+    p1 = polarplot(ax,...
+        measuredAzimuth,...
+        measuredRange,...
+        'o',...
+        'MarkerSize',6,...
+        'LineWidth',1);
+
+
+    %% Plot Kalman estimate
+
+    p2 = polarplot(ax,...
+        currentAzimuth,...
+        currentRange,...
+        'x',...
+        'MarkerSize',10,...
+        'LineWidth',2);
+
+
+    %% Display information
+
+    title(ax,...
+        sprintf(['RADAR - DRONE DETECTION SYSTEM\n' ...
+        'Range: %.1f m   Azimuth: %.1f°   Status: %s'],...
+        currentRange,...
+        estimatedAzimuth(k),...
+        status));
+
+
+    drawnow;
+
+    pause(dt);
+
+
+    %% Remove current markers
+
+    delete(p1);
+    delete(p2);
+
+end
+
+%% ==========================================
+% PHASE E - RADAR PPI
+% ==========================================
+
+alertTriggered = false;
+
+figure('Name','Anti-Drone Radar System');
+
+ax = polaraxes;
+
+hold(ax,'on');
+
+rlim(ax,[0 radarMaxRange]);
+
+thetalim(ax,[-180 180]);
+
+title(ax,'ANTI-DRONE RADAR SYSTEM');
+
+
+%% Range rings
+
+ringRanges = [250 500 750 1000];
+
+thetaRing = linspace(-pi,pi,360);
+
+for r = ringRanges
+
+    polarplot(ax,...
+        thetaRing,...
+        r*ones(size(thetaRing)),...
+        '--',...
+        'LineWidth',1);
+
+end
+
+
+%% Protected zone
+
+polarplot(ax,...
+    thetaRing,...
+    protectedRadius*ones(size(thetaRing)),...
+    '--',...
+    'LineWidth',2);
+
+
+%% Radar center
+
+polarplot(ax,...
+    0,...
+    0,...
+    '+',...
+    'MarkerSize',12,...
+    'LineWidth',3);
+
+
+%% Sweep
+
+sweepAngle = 0;
+
+sweepSpeed = deg2rad(6);
+
+
+%% Main radar loop
+
+for k = 1:length(time)
+
+    %% Radar measurement
+
+    measuredRange = Rmeasured(k);
+
+    measuredAzimuth = ...
+        deg2rad(AzMeasured(k));
+
+
+    %% Kalman estimate
+
+    currentRange = estimatedRange(k);
+
+    currentAzimuth = ...
+        deg2rad(estimatedAzimuth(k));
+
+
+    %% Velocity
+
+    currentVelocity = sqrt( ...
+        Vxestimated(k)^2 + ...
+        Vyestimated(k)^2);
+
+
+    %% Status
+
+    if currentRange <= protectedRadius
+
+        status = "INTRUSION";
+
+    elseif currentRange <= approachRadius
+
+        status = "APPROACHING";
+
+    else
+
+        status = "NORMAL";
+
+    end
+
+
+    %% Radar sweep
+
+    sweepAngle = sweepAngle + sweepSpeed;
+
+    if sweepAngle > pi
+
+        sweepAngle = sweepAngle - 2*pi;
+
+    end
+
+
+    sweepLine = polarplot(ax,...
+        [sweepAngle sweepAngle],...
+        [0 radarMaxRange],...
+        'LineWidth',2);
+
+
+    %% Raw radar measurement
+
+    measurementPlot = polarplot(ax,...
+        measuredAzimuth,...
+        measuredRange,...
+        'o',...
+        'MarkerSize',6,...
+        'LineWidth',1);
+
+
+    %% Kalman target
+
+    targetPlot = polarplot(ax,...
+        currentAzimuth,...
+        currentRange,...
+        'x',...
+        'MarkerSize',10,...
+        'LineWidth',3);
+
+
+    %% Kalman track history
+
+    trackRange = sqrt( ...
+        Xestimated(1:k).^2 + ...
+        Yestimated(1:k).^2);
+
+    trackAzimuth = atan2( ...
+        Yestimated(1:k),...
+        Xestimated(1:k));
+
+    trackPlot = polarplot(ax,...
+        trackAzimuth,...
+        trackRange,...
+        'LineWidth',2);
+
+
+    %% Display information
+
+    title(ax,...
+        sprintf(['ANTI-DRONE RADAR SYSTEM\n' ...
+        'TARGET: T001   RANGE: %.1f m   ' ...
+        'AZIMUTH: %.1f°   SPEED: %.1f m/s   STATUS: %s'],...
+        currentRange,...
+        estimatedAzimuth(k),...
+        currentVelocity,...
+        status));
+
+
+    %% Alert
+
+    if currentRange <= protectedRadius
+
+        if ~alertTriggered
+
+            fprintf('\n');
+            fprintf('====================================\n');
+            fprintf('       DRONE INTRUSION ALERT\n');
+            fprintf('====================================\n');
+            fprintf('Target  : T001\n');
+            fprintf('Range   : %.1f m\n',currentRange);
+            fprintf('Azimuth : %.1f degrees\n',estimatedAzimuth(k));
+            fprintf('Speed   : %.1f m/s\n',currentVelocity);
+            fprintf('====================================\n');
+
+            alertTriggered = true;
+
+        end
+
+    end
+
+
+    %% Update
+
+    drawnow;
+
+    pause(dt);
+
+
+    %% Delete temporary graphics
+
+    delete(sweepLine);
+    delete(measurementPlot);
+    delete(targetPlot);
+    delete(trackPlot);
 
 end
